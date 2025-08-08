@@ -27,11 +27,12 @@ def process_file(uploaded_file):
     # Create result DataFrame
     result_df = pd.DataFrame(list(model_counts.items()), columns=["Model Number", "Quantity"])
 
-    # Output CSV
+    # Output CSV as binary
     output = StringIO()
     result_df.to_csv(output, index=False)
-    output.seek(0)
-    return output
+    csv_bytes = output.getvalue().encode("utf-8")
+
+    return csv_bytes
 
 st.title("Friedrich iStore CSV Creator")
 uploaded_files = st.file_uploader("Upload one or more Excel files", type=["xlsx"], accept_multiple_files=True)
