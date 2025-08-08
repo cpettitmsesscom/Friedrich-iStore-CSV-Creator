@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 from io import StringIO
+import re
 
 def process_file(uploaded_file):
     # Load Excel
@@ -9,40 +10,50 @@ def process_file(uploaded_file):
     sheet = xls.sheet_names[0]
     df = xls.parse(sheet)
 
-    # Remove first column (usually an index or empty)
+    # Remove first column (assumed to be an index/label column)
     df_cleaned = df.iloc[:, 1:]
 
-    # Tags are column headers, excluding the first column
-    tag_row = df_cleaned.columns[1:]
+    # Extract tags from column headers (skip first column)
+    tags = df_cleaned.columns[1:]
 
-    # Model numbers are in row index 2 (third row), skip first column
-    model_numbers = df_cleaned.iloc[2, 1:]
+    # Extract model numbers from row index 1 (3rd visible row)
+    model_numbers = df_cleaned.iloc[1, 1:]
 
-    # Count occurrences of each model number
+    # Calculate quantities
     model_counts = {}
-    for tag, model in zip(tag_row, model_numbers):
-        if pd.notna(model):
-            model_counts[model] = model_counts.get(model, 0) + 1
+    for tag, model in zip(tags, model_numbers):
+        if pd.isna(model):
+            continue
 
-    # Create result DataFrame
-    result_df = pd.DataFrame(list(model_counts.items()), columns=["Model Number", "Quantity"])
+        quantity = 1  # Default quantity
 
-    # Output CSV as binary
+        # Handle "1thru5" format
+        match_range = re.search(r'(\d+)\s*thru\s*(\d+)', tag, flags=re.IGNORECASE)
+        if match_range:
+            start, end = map(int, match_range.groups())
+            quantity = end - start + 1
+        else:
+            # Handle "1,2,3" format
+            match_list = re.findall(r'\d+', tag)
+            if match_list:
+                quantity = len(match_list)
+
+        model_counts[model] = model_counts.get(model, 0) + quantity
+
+    # Convert to CSV without headers
     output = StringIO()
-    result_df.to_csv(output, index=False)
-    csv_bytes = output.getvalue().encode("utf-8")
-
-    return csv_bytes
+    pd.DataFrame(model_counts.items()).to_csv(output, index=False, header=False)
+    return output.getvalue().encode("utf-8")
 
 st.title("Friedrich iStore CSV Creator")
 uploaded_files = st.file_uploader("Upload one or more Excel files", type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
     for file in uploaded_files:
-        processed_file = process_file(file)
+        processed_csv = process_file(file)
         st.download_button(
             label=f"Download CSV: {file.name.replace('.xlsx', '.csv')}",
-            data=processed_file,
+            data=processed_csv,
             file_name=f"iStore_{file.name.replace('.xlsx', '.csv')}",
             mime="text/csv"
         )
